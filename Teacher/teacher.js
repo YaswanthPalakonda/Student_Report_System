@@ -18,12 +18,12 @@ if (!currentUser || currentUser.role !== 'teacher') location.href = '../login.ht
 function applyTheme(t) {
     document.documentElement.dataset.theme = t;
     localStorage.setItem(K.theme, t);
-    themeToggle.textContent = t === 'dark' ? '☀️': '🌙'
+    themeToggle.textContent = t === 'dark' ? '☀️' : '🌙'
 }
 applyTheme(localStorage.getItem(K.theme) || 'light');
 teacherName.textContent = currentUser.name;
 dashName.textContent = currentUser.name;
-themeToggle.onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light': 'dark');
+themeToggle.onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => showSection(b.dataset.section));
 const getUsers = () => read(K.users), getReports = () => read(K.reports), getMaps = () => read(K.maps);
 function settings() {
@@ -59,7 +59,7 @@ function assigned() {
     return getMaps().filter(m => m.teacherEmail === currentUser.email)
 }
 function loadDashboard() {
-    const maps = assigned(), classes = [...new Set(maps.map(m => m.className))], students = getUsers().filter(u => u.role === 'student' && (!u.className || classes.includes(u.className))), reports = getReports().filter(r => r.teacherEmail === currentUser.email), avg = reports.length ? reports.reduce((a, r) => a + Number(r.marks || 0), 0) / reports.length: 0;
+    const maps = assigned(), classes = [...new Set(maps.map(m => m.className))], students = getUsers().filter(u => u.role === 'student' && (!u.className || classes.includes(u.className))), reports = getReports().filter(r => r.teacherEmail === currentUser.email), avg = reports.length ? reports.reduce((a, r) => a + Number(r.marks || 0), 0) / reports.length : 0;
     classCount.textContent = classes.length;
     studentCount.textContent = students.length;
     reportCount.textContent = reports.length;
@@ -68,7 +68,7 @@ function loadDashboard() {
 }
 function loadStudents() {
     const maps = assigned(), classes = [...new Set(maps.map(m => m.className))], students = getUsers().filter(u => u.role === 'student' && (!u.className || classes.includes(u.className)));
-    student.innerHTML = '<option value="">Select student</option>' + students.map(s => `<option value="${esc(s.email)}">${esc(s.name)} · ${esc(s.className||'Unassigned')}</option>`).join('');
+    student.innerHTML = '<option value="">Select student</option>' + students.map(s => `<option value="${esc(s.email)}">${esc(s.name)} · ${esc(s.className || 'Unassigned')}</option>`).join('');
     if (student.value) updateStudentClass()
 }
 student.onchange = updateStudentClass;
@@ -80,7 +80,7 @@ function recalc() {
     const total = Number(testMarks.value || 0) + Number(examMarks.value || 0);
     totalMarks.value = total;
     liveGrade.textContent = grade(total);
-    liveResult.textContent = total >= settings().passMark ? 'Pass': 'Fail'
+    liveResult.textContent = total >= settings().passMark ? 'Pass' : 'Fail'
 }
 [testMarks, examMarks].forEach(x => x.addEventListener('input', recalc));
 reportForm.onsubmit = e => {
@@ -91,7 +91,7 @@ reportForm.onsubmit = e => {
     if (test > 40 || exam > 60 || marks > 100 || attendanceValue > 100) return formMessage.textContent = 'Please enter valid marks and attendance.';
     const reports = getReports();
     const report = {
-        id: Date.now(), studentEmail: s.email, studentName: s.name, studentId: s.studentId || '', className: s.className || '', subject: subject.value.trim(), testMarks: test, examMarks: exam, marks, percentage: marks, grade: grade(marks), result: marks >= settings().passMark ? 'Pass': 'Fail', attendance: attendanceValue, attendanceStatus: attendanceStatus.value, remarks: remarks.value.trim(), teacherEmail: currentUser.email, date: new Date().toLocaleDateString()
+        id: Date.now(), studentEmail: s.email, studentName: s.name, studentId: s.studentId || '', className: s.className || '', subject: subject.value.trim(), testMarks: test, examMarks: exam, marks, percentage: marks, grade: grade(marks), result: marks >= settings().passMark ? 'Pass' : 'Fail', attendance: attendanceValue, attendanceStatus: attendanceStatus.value, remarks: remarks.value.trim(), teacherEmail: currentUser.email, date: new Date().toLocaleDateString()
     };
     reports.push(report);
     write(K.reports, reports);
@@ -112,18 +112,13 @@ function renderRoster() {
     const cls = rosterClass.value, classes = assigned().map(m => m.className), students = getUsers().filter(u => u.role === 'student' && classes.includes(u.className) && (cls === 'all' || u.className === cls)), reports = getReports();
     rosterTable.innerHTML = students.map(s => {
         const r = reports.filter(x => x.studentEmail === s.email && x.teacherEmail === currentUser.email).slice(-1)[0];
-        return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.email)}</td><td>${esc(s.studentId||'—')}</td><td>${esc(s.className||'—')}</td><td><span class="badge grade">${esc(r?.grade||'—')}</span></td><td>${r?` $ {
-            r.attendance
-        }
-         % ·$ {
-            esc(r.attendanceStatus || '')
-        }
-        `:'—'}</td></tr>`
+        return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.email)}</td><td>${esc(s.studentId || '—')}</td><td>${esc(s.className || '—')}</td><td><span class="badge grade">${esc(r?.grade || '—')}</span></td>
+        <td>${r ? r.attendance + '% · ' + esc(r.attendanceStatus || '') : '—'}</td></tr>`
     }).join('') || emptyRow(6, 'No students found in this class.')
 }
 function loadReports() {
     const q = (reportSearch.value || '').toLowerCase(), f = reportFilter.value, rows = getReports().filter(r => r.teacherEmail === currentUser.email).filter(r => (`${r.studentName} ${r.subject}`.toLowerCase().includes(q)) && (f === 'all' || r.result === f));
-    reportsTable.innerHTML = rows.slice().reverse().map(r => `<tr><td>${esc(r.studentName)}</td><td>${esc(r.subject)}</td><td>${r.testMarks??'—'}</td><td>${r.examMarks??'—'}</td><td><strong>${r.marks}%</strong></td><td>${r.attendance}%</td><td><span class="badge grade">${esc(r.grade)}</span></td><td><span class="badge ${r.result.toLowerCase()}">${r.result}</span></td><td><button class="small-btn" onclick="editReport(${r.id})">Edit</button></td></tr>`).join('') || emptyRow(9, 'No reports submitted yet.')
+    reportsTable.innerHTML = rows.slice().reverse().map(r => `<tr><td>${esc(r.studentName)}</td><td>${esc(r.subject)}</td><td>${r.testMarks ?? '—'}</td><td>${r.examMarks ?? '—'}</td><td><strong>${r.marks}%</strong></td><td>${r.attendance}%</td><td><span class="badge grade">${esc(r.grade)}</span></td><td><span class="badge ${r.result.toLowerCase()}">${r.result}</span></td><td><button class="small-btn" onclick="editReport(${r.id})">Edit</button></td></tr>`).join('') || emptyRow(9, 'No reports submitted yet.')
 }
 function editReport(id) {
     const r = getReports().find(x => x.id === id);
@@ -143,7 +138,7 @@ function editReport(id) {
         ev.preventDefault();
         const reports = getReports(), i = reports.findIndex(x => x.id === id);
         reports[i] = {
-            ...reports[i], subject: subject.value.trim(), testMarks: Number(testMarks.value), examMarks: Number(examMarks.value), marks: Number(totalMarks.value), percentage: Number(totalMarks.value), grade: grade(Number(totalMarks.value)), result: Number(totalMarks.value) >= settings().passMark ? 'Pass': 'Fail', attendance: Number(attendance.value), attendanceStatus: attendanceStatus.value, remarks: remarks.value.trim(), date: new Date().toLocaleDateString()
+            ...reports[i], subject: subject.value.trim(), testMarks: Number(testMarks.value), examMarks: Number(examMarks.value), marks: Number(totalMarks.value), percentage: Number(totalMarks.value), grade: grade(Number(totalMarks.value)), result: Number(totalMarks.value) >= settings().passMark ? 'Pass' : 'Fail', attendance: Number(attendance.value), attendanceStatus: attendanceStatus.value, remarks: remarks.value.trim(), date: new Date().toLocaleDateString()
         };
         write(K.reports, reports);
         formMessage.textContent = 'Report updated successfully.';
