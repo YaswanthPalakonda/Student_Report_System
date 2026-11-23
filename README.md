@@ -1,319 +1,101 @@
-# 🎓 Student Report System
+﻿# Student Report System
 
-A modern, responsive, web-based Student Report System built using **React.js and Vite**. The application helps manage student academic performance, attendance, grading, teacher feedback, and role-based access through a simple and user-friendly interface.
+A React + Vite frontend with an Express 5 / Mongoose backend for shared academic records. The existing Admin, Teacher and Student layouts, themes and print styles are retained. MongoDB is now authoritative; browser storage holds only theme and remembered-email preferences.
 
-The system provides separate portals for Administrators, Teachers, and Students, with browser Local Storage used for managing application data and authentication state.
+## Local setup
 
----
+Use Node.js 24 LTS. In PowerShell use `npm.cmd` if execution policy blocks `npm.ps1`.
 
-## 🚀 Project Overview
+From this workspace root:
 
-The Student Report System provides three separate portals:
-
-* 👨‍💼 Administrator
-* 👨‍🏫 Teacher
-* 👨‍🎓 Student
-
-The Administrator manages users, class and subject assignments, grading policies, and academic reports.
-
-Teachers manage student academic records, marks, attendance, and feedback.
-
-Students can view their profiles, academic performance, attendance, grades, and digital report cards.
-
----
-
-## ✨ Key Features
-
-### 🔐 Authentication
-
-* Role-based login system
-* Automatic role detection
-* Role-based dashboard redirection
-* Admin-managed Teacher and Student accounts
-* Password show/hide option
-* Remember Me functionality
-* Protected dashboard access
-* Logout functionality
-* Local Storage-based authentication
-
-> There is no public Signup page. All Teacher and Student accounts are created and managed by the Administrator.
-
----
-
-## 👨‍💼 Admin Portal
-
-### Dashboard
-
-* Total student count
-* Total teacher count
-* Overall class average
-* System overview
-
-### User Management
-
-* Add students
-* Add teachers
-* Edit user information
-* View user information
-* Delete users
-* Search users
-* Filter users by role
-
-### Class & Subject Management
-
-* Assign teachers to classes
-* Assign subjects
-* Manage teacher assignments
-* Remove assignments
-
-### Reports
-
-* View student reports
-* Search reports
-* Filter reports
-* Delete reports
-* Monitor academic performance
-
-### Grading Policy
-
-* Configure grading ranges
-* Configure pass marks
-* Manage grading rules
-
----
-
-## 👨‍🏫 Teacher Portal
-
-### Student Management
-
-* View assigned class roster
-* View student information
-* Select students for report entry
-
-### Marks Management
-
-* Enter test marks
-* Enter examination marks
-* Automatic total calculation
-* Automatic percentage calculation
-* Automatic grade calculation
-* Pass/Fail calculation
-
-### Attendance
-
-* Record attendance
-* Present
-* Absent
-* Late
-* Attendance percentage calculation
-
-### Teacher Feedback
-
-* Add student remarks
-* Add academic feedback
-* Update existing reports
-
----
-
-## 👨‍🎓 Student Portal
-
-### Student Dashboard
-
-* Personal profile
-* Class and section information
-* Overall academic performance
-* GPA
-* Average marks
-* Attendance percentage
-
-### Digital Report Card
-
-* Subject-wise marks
-* Percentage
-* Grade
-* Attendance
-* Teacher remarks
-* Pass/Fail status
-
-### Performance Visualization
-
-* Subject performance progress bars
-* Academic performance overview
-
-### Report Printing
-
-* Print report card
-* Save report card as PDF using browser print functionality
-
----
-
-## 🎨 UI & Design
-
-* Modern responsive interface
-* Dark Mode and Light Mode
-* Theme persistence
-* CSS Grid and Flexbox
-* Dashboard cards
-* Interactive tables
-* Status badges
-* Progress indicators
-* Responsive navigation
-* Separate role-specific dashboards
-
----
-
-## 💾 Data Management
-
-The application currently uses browser `localStorage` to manage:
-
-* User accounts
-* Authentication/session state
-* Student records
-* Teacher records
-* Academic reports
-* Attendance
-* Teacher assignments
-* Grading policies
-* Theme preferences
-
-**Note:** Local Storage is browser-specific. Data created in one browser or device is not automatically shared with other users or devices. Clearing browser storage may also remove application data.
-
----
-
-## 🛠️ Technologies Used
-
-### Frontend
-
-* React.js
-* JavaScript 
-* HTML5
-* CSS3
-
-### Build Tool
-
-* Vite
-
-### Routing
-
-* React Router DOM
-
-### Data Storage
-
-* Browser Local Storage
-
-### Development Tools
-
-* Visual Studio Code
-* Node.js
-* npm
-* Git and GitHub
-
-### Deployment
-
-* Vercel
-
----
-
-## 📁 Project Structure
-
-```text
-Student_Report_System/
-│
-├── public/
-│
-├── src/
-│   ├── components/
-│   │   ├── Admin/
-│   │   │   ├── Admin.jsx
-│   │   │   └── Admin.css
-│   │   │
-│   │   ├── Student/
-│   │   │   ├── Student.jsx
-│   │   │   └── Student.css
-│   │   │
-│   │   ├── Teacher/
-│   │   │   ├── Teacher.jsx
-│   │   │   └── Teacher.css
-│   │   │
-│   │   └── Auth/
-│   │       ├── Login.jsx
-│   │       └── Auth.css
-│   │
-│   ├── App.jsx
-│   ├── App.css
-│   ├── index.css
-│   └── main.jsx
-│
-├── index.html
-├── package.json
-├── package-lock.json
-├── vite.config.js
-└── README.md
+```powershell
+npm.cmd ci
 ```
 
----
+From `backend`:
 
-## ⚙️ Installation and Setup
-
-### Prerequisites
-
-* Node.js
-* npm
-* Git
-
-### 1. Clone the Repository
-
-```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
+```powershell
+npm.cmd ci
 ```
 
-### 2. Navigate to the Project Directory
+Privately create `backend/.env` using `backend/.env.example` as the template. No real `.env` is included or created by this implementation. Never paste secrets into chat or commit them.
 
-```bash
-cd Student_Report_System
+| Variable | Meaning |
+|---|---|
+| PORT | API listener, default 5000 |
+| NODE_ENV | development or production |
+| FRONTEND_URL | Exact allowed frontend origin(s), comma separated; local default http://localhost:5173 |
+| MONGODB_URI | Atlas URI, optionally already containing credentials |
+| MONGODB_USERNAME / MONGODB_PASSWORD | Required only when credentials are absent from the URI; URL-encoded by the helper |
+| JWT_SECRET | Required private random secret, at least 32 characters; placeholder values rejected |
+| SESSION_HOURS | JWT/session lifetime; default 8, maximum 168 |
+| DNS_SERVERS | Comma-separated IP addresses; default 8.8.8.8 in development, system DNS in production; blank explicitly selects system DNS |
+| COOKIE_SAME_SITE | lax by default; none only for HTTPS cross-site setups |
+| TRUST_PROXY | Verified trusted proxy hop count, default 0 |
+
+The database name remains `student_report_system`. To check your privately configured connection without changing academic records, run from `backend`:
+
+```powershell
+npm.cmd run check-db
 ```
 
-### 3. Install Dependencies
+A database connection was tested only against disposable local MongoDB during implementation. Your Atlas connectivity has not been verified.
 
-```bash
-npm install
+## Provision the administrator
+
+There is no public signup and no default administrator credential. When you deliberately choose to provision an account, privately provide `PROVISION_ADMIN=yes`, `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` in the backend environment and run:
+
+```powershell
+npm.cmd run create-admin
 ```
 
-### 4. Start the Development Server
+The script creates an administrator, refuses to overwrite an existing email, and never prints the password. Remove the setup password/flag from your private environment afterward. Admin then creates all Teacher/Student accounts through the portal. Passwords must be at least eight characters and no more than 72 UTF-8 bytes.
 
-```bash
-npm run dev
+## Run locally
+
+Terminal 1, in `backend`:
+
+```powershell
+npm.cmd run dev
 ```
 
-### 5. Build for Production
+Terminal 2, in the project root:
 
-```bash
-npm run build
+```powershell
+npm.cmd run dev
 ```
 
-The production-ready files will be generated inside the `dist` folder.
+Open http://localhost:5173. The Vite development proxy sends `/api` to the backend at port 5000. Optional root environment variables are `VITE_API_BASE_URL=/api` and `API_PROXY_TARGET=http://localhost:5000`. `VITE_` values are public; never use them for secrets.
 
----
+For LAN testing, run Vite with `npm.cmd run dev -- --host 0.0.0.0`, allow the chosen frontend port through your firewall, and add the exact LAN frontend origin to backend `FRONTEND_URL`. Each device must open that same frontend address; the Vite proxy reaches the one backend. Deploy behind HTTPS for production.
 
-## 🌐 Deployment
+## Verification
 
-The application is deployed using **Vercel**
+```powershell
+# Project root
+npm.cmd run lint
+npm.cmd run build
+npm.cmd run test:e2e
 
----
+# backend directory
+npm.cmd test
+npm.cmd run test:unit
+```
 
-## 🔮 Future Enhancements
+Backend tests use a disposable actual MongoDB server and never read `.env` or touch Atlas. First run requires a binary download; browser tests use headless Edge and three independent browser contexts. See the testing guide for prerequisites, coverage, artifacts and the manual checklist.
 
-* Cloud database integration
-* Centralized user authentication
-* Shared student and teacher records across devices
-* Improved data security
-* Advanced academic analytics
-* Export reports in PDF format
+## Documentation
 
----
+- [API endpoints, payloads, permissions and database models](docs/API.md)
+- [Testing instructions and manual acceptance checklist](docs/TESTING.md)
+- [Actual verification results and remaining environment checks](docs/VERIFICATION.md)
+- [Vercel and Node hosting deployment instructions](docs/DEPLOYMENT.md)
+- [Created/modified files, intentional changes and limitations](docs/CHANGES.md)
 
-## 🎯 Project Objective
+The existing Vercel SPA rewrite is preserved. A production API proxy rule must be added with the actual backend hostname before deploying with the default `/api` base URL. Nothing has been deployed.
 
-The main objective of this project is to develop a simple and efficient academic management system that allows administrators, teachers, and students to manage and access academic information through a role-based web application.
+## Academic behavior
 
----
+Test marks /40 plus exam marks /60 produce total percentage. Default grade thresholds are A+ 90, A 80, B 70, C 60, D 50, F 0, with pass mark 40. The original F/Pass combination for 40-49 is retained. GPA is mean percentage divided by 10. Attendance is stored per report as a percentage and Present/Absent/Late status.
+
+There is one current report per student/class/subject. Teacher permissions are enforced server-side using assignments; Students see only their own records. Updates appear on refocus or within 15 seconds in visible portals. Account removal deactivates login while retaining academic history. Legacy browser records are ignored and are not automatically migrated or erased.

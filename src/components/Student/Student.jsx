@@ -1,137 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/auth';
+import { usePortal } from '../../hooks/usePortal';
+import PortalStatus from '../PortalStatus';
 import './Student.css';
 
-const K = {
-  users: 'users',
-  reports: 'reports',
-  settings: 'gradingSettings',
-  current: 'currentUser',
-  theme: 'theme'
-};
-
-const read = (key, fallback = []) => {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const defaultSettings = {
-  passMark: 40,
-  grades: [
-    { label: 'A+', min: 90 },
-    { label: 'A', min: 80 },
-    { label: 'B', min: 70 },
-    { label: 'C', min: 60 },
-    { label: 'D', min: 50 },
-    { label: 'F', min: 0 }
-  ]
-};
-
 function Student() {
-
-  const currentUser = read(K.current, null);
-
+  const { user: currentUser, logout } = useAuth();
+  const portal = usePortal('student');
+  const { reports, settings, summary } = portal;
   const [activeSection, setActiveSection] = useState('dashboard');
-
-  const [theme, setTheme] = useState(
-    localStorage.getItem(K.theme) || 'light'
-  );
-
-  const [reports, setReports] = useState(() =>
-    read(K.reports).filter(
-      r => r.studentEmail === currentUser?.email
-    )
-  );
-
-  const [settings] = useState(() =>
-    read(K.settings, defaultSettings)
-  );
-
-  // Theme management
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem(K.theme, theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  };
-
-  // Grade calculation
-
-  const calculateGrade = marks => {
-    return [...settings.grades]
-      .sort((a, b) => b.min - a.min)
-      .find(g => Number(marks) >= g.min)?.label || 'F';
-  };
-
-  // Dashboard calculations
-
-  const averageMarks = reports.length
-    ? reports.reduce((sum, r) =>
-        sum + Number(r.marks || 0), 0
-      ) / reports.length
-    : 0;
-
-  const averageAttendance = reports.length
-    ? reports.reduce((sum, r) =>
-        sum + Number(r.attendance || 0), 0
-      ) / reports.length
-    : 0;
-
-  const passedReports = reports.filter(
-    r => r.result === 'Pass'
-  ).length;
-
-  const passRate = reports.length
-    ? (passedReports / reports.length) * 100
-    : 0;
-
-  const overallGrade = reports.length
-    ? calculateGrade(averageMarks)
-    : '—';
-
-  const gpa = reports.length
-    ? (averageMarks / 10).toFixed(2)
-    : '—';
-
-  // Navigation
-
-  const showSection = section => {
-    setActiveSection(section);
-  };
-
-  // Print report
-
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('theme', theme); }, [theme]);
+  const toggleTheme = () => setTheme(previous => previous === 'dark' ? 'light' : 'dark');
+  const calculateGrade = marks => [...settings.grades].sort((a, b) => b.min - a.min).find(g => Number(marks) >= g.min)?.label || 'F';
+  const averageMarks = summary?.averageMarks || 0;
+  const averageAttendance = summary?.averageAttendance || 0;
+  const passRate = summary?.passRate || 0;
+  const overallGrade = summary?.overallGrade || '—';
+  const gpa = summary?.gpa || '—';
+  const showSection = section => setActiveSection(section);
   const printReport = () => {
     setActiveSection('reports');
-
-    setTimeout(() => {
-      window.print();
-    }, 300);
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
   };
-
-  // Logout
-
-  const logout = () => {
-    localStorage.removeItem(K.current);
-    window.location.href = '/login';
-  };
-
-  // Authentication check
-
-  if (!currentUser || currentUser.role !== 'student') {
-    return (
-      <div className="student-access-denied">
-        <h2>Student Access Required</h2>
-        <p>Please log in using your student account.</p>
-      </div>
-    );
-  }
-
   return (
 
     <div className="student-container">
@@ -211,6 +102,7 @@ function Student() {
         {/* Main Content */}
 
         <main className="content">
+          <PortalStatus {...portal} />
 
           {/* DASHBOARD */}
 
@@ -358,7 +250,7 @@ function Student() {
 
           {activeSection === 'reports' && (
 
-            <section className="page-section">
+            <section id="reports" className="page-section">
 
               <div className="page-head">
 

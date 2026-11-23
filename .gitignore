@@ -24,3 +24,21 @@ dist-ssr
 *.sw?
 
 .vercel
+.env
+.env.*
+!.env.example
+.npm-cache/
+.test-artifacts/
+# Test coverage
+coverage/
+
+# Local database binaries
+.mongodb-binaries/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Local environment overrides
+.env.production.local
+.env.development.local

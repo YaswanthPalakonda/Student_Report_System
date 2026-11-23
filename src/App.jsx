@@ -4,12 +4,14 @@ import Login from './components/Auth/Login';
 import Admin from './components/Admin/Admin';
 import Student from './components/Student/Student';
 import Teacher from './components/Teacher/Teacher';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/auth';
 
 // Protect pages based on user role
 function ProtectedRoute({ role, children }) {
-  const currentUser = JSON.parse(
-    localStorage.getItem('currentUser') || 'null'
-  );
+  const { user: currentUser, loading, error, restore } = useAuth();
+  if (loading) return <p role="status">Restoring your session…</p>;
+  if (error && !currentUser) return <div role="alert"><p>{error}</p><button onClick={restore}>Retry connection</button></div>;
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;
@@ -19,12 +21,12 @@ function ProtectedRoute({ role, children }) {
     return <Navigate to="/login" replace />;
   }
 
-  return children;
+  return <>{error && <p role="alert">{error}</p>}{children}</>;
 }
 
 function App() {
   return (
-    <BrowserRouter>
+    <AuthProvider><BrowserRouter>
       <Routes>
         {/* Login Page */}
         <Route path="/" element={<Navigate to="/login" replace />} />
@@ -63,7 +65,7 @@ function App() {
         {/* Invalid URL */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
-    </BrowserRouter>
+    </BrowserRouter></AuthProvider>
   );
 }
 
