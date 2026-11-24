@@ -1,38 +1,183 @@
 import React, { useState, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../context/auth';
-import { preference } from '../../lib/preferences';
 import './Auth.css';
 
+const KEYS = {
+    users: 'users',
+    reports: 'reports',
+    settings: 'gradingSettings',
+    current: 'currentUser',
+    remember: 'rememberedUser',
+    theme: 'theme'
+};
+
+const defaults = {
+    grades: [
+        { label: 'A+', min: 90 },
+        { label: 'A', min: 80 },
+        { label: 'B', min: 70 },
+        { label: 'C', min: 60 },
+        { label: 'D', min: 50 },
+        { label: 'F', min: 0 }
+    ],
+    passMark: 40
+};
+
+function read(key, fallback = []) {
+    try {
+        return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function write(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+}
+
 function Login() {
-    const { user, login, loading, error: sessionError } = useAuth();
-    const [email, setEmail] = useState(() => preference('rememberedUser', {})?.email || '');
+
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [rememberMe, setRememberMe] = useState(() => Boolean(preference('rememberedUser', {})?.email));
+
+    const [rememberMe, setRememberMe] = useState(false);
+
     const [showPassword, setShowPassword] = useState(false);
-    const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+
+    const [theme, setTheme] = useState(
+        localStorage.getItem(KEYS.theme) || 'light'
+    );
+
     const [message, setMessage] = useState('');
-    const [busy, setBusy] = useState(false);
+
+    // Initialize application data
+
     useEffect(() => {
+
+        let users = read(KEYS.users);
+
+        if (!users.some(u => u.email === 'admin@school.com')) {
+
+            users.unshift({
+                id: 'admin-1',
+                name: 'System Administrator',
+                email: 'admin@school.com',
+                password: 'admin123',
+                role: 'admin'
+            });
+
+        }
+
+        write(KEYS.users, users);
+
+        if (!localStorage.getItem(KEYS.reports)) {
+            write(KEYS.reports, []);
+        }
+
+        if (!localStorage.getItem(KEYS.settings)) {
+            write(KEYS.settings, defaults);
+        }
+
+        const remembered = read(KEYS.remember, null);
+
+        if (remembered?.email) {
+            setEmail(remembered.email);
+            setRememberMe(true);
+        }
+
+    }, []);
+
+    // Theme management
+
+    useEffect(() => {
+
         document.documentElement.dataset.theme = theme;
-        localStorage.setItem('theme', theme);
+
+        localStorage.setItem(KEYS.theme, theme);
+
     }, [theme]);
-    const toggleTheme = () => setTheme(previous => previous === 'dark' ? 'light' : 'dark');
-    const togglePassword = () => setShowPassword(previous => !previous);
-    const handleLogin = async event => {
-        event.preventDefault();
-        if (busy) return;
-        setBusy(true); setMessage('');
-        try {
-            const normalizedEmail = email.trim().toLowerCase();
-            await login(normalizedEmail, password);
-            if (rememberMe) localStorage.setItem('rememberedUser', JSON.stringify({ email: normalizedEmail }));
-            else localStorage.removeItem('rememberedUser');
-            setPassword('');
-        } catch (err) { setMessage(err.message); }
-        finally { setBusy(false); }
+
+    const toggleTheme = () => {
+
+        setTheme(prev =>
+            prev === 'dark' ? 'light' : 'dark'
+        );
+
     };
-    if (user) return <Navigate to={`/${user.role}`} replace />;
+
+    // Password visibility
+
+    const togglePassword = () => {
+
+        setShowPassword(prev => !prev);
+
+    };
+
+    // Login functionality
+
+    const handleLogin = e => {
+
+        e.preventDefault();
+
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const users = read(KEYS.users);
+
+        const user = users.find(
+            u =>
+                u.email.toLowerCase() === normalizedEmail &&
+                u.password === password
+        );
+
+        if (!user) {
+
+            setMessage(
+                'Invalid email or password. Please use the credentials provided by Admin.'
+            );
+
+            return;
+
+        }
+
+        // Save current user
+
+        write(KEYS.current, user);
+
+        // Remember email
+
+        if (rememberMe) {
+
+            write(KEYS.remember, {
+                email: normalizedEmail
+            });
+
+        } else {
+
+            localStorage.removeItem(KEYS.remember);
+
+        }
+
+        // Role-based navigation
+
+        if (user.role === 'admin') {
+
+            window.location.href = '/admin';
+
+        } else if (user.role === 'teacher') {
+
+            window.location.href = '/teacher';
+
+        } else if (user.role === 'student') {
+
+            window.location.href = '/student';
+
+        } else {
+
+            setMessage('Invalid user role.');
+
+        }
+
+    };
+
     return (
 
         <div className="auth-shell">
@@ -68,7 +213,7 @@ function Login() {
                     <div className="hero-pills">
 
                         <span>
-                            ⚡ Shared academic records
+                            ⚡ Real-time local data
                         </span>
 
                         <span>
@@ -143,7 +288,6 @@ function Login() {
                                 <input
                                     type={showPassword ? 'text' : 'password'}
                                     id="loginPassword"
-                                    aria-label="Password"
                                     placeholder="Enter password"
                                     required
                                     autoComplete="current-password"
@@ -200,14 +344,13 @@ function Login() {
                         <button
                             className="primary-btn"
                             type="submit"
-                            disabled={busy || loading}
                         >
                             Sign in
                             <span>→</span>
                         </button>
 
                         <p className="message">
-                            {message || sessionError || (loading ? 'Restoring your session…' : busy ? 'Signing in…' : '')}
+                            {message}
                         </p>
 
                     </form>

@@ -1,68 +1,351 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../context/auth';
-import { usePortal } from '../../hooks/usePortal';
-import PortalStatus from '../PortalStatus';
-import CatalogManager from './CatalogManager';
 import './Admin.css';
 
+const K = {
+  users: 'users',
+  reports: 'reports',
+  settings: 'gradingSettings',
+  maps: 'teacherAssignments',
+  current: 'currentUser',
+  theme: 'theme'
+};
+
+const read = (key, fallback = []) => {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const write = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+const defaultSettings = {
+  grades: [
+    { label: 'A+', min: 90 },
+    { label: 'A', min: 80 },
+    { label: 'B', min: 70 },
+    { label: 'C', min: 60 },
+    { label: 'D', min: 50 },
+    { label: 'F', min: 0 }
+  ],
+  passMark: 40
+};
+
 function Admin() {
-  const { user: currentUser, logout } = useAuth();
-  const portal = usePortal('admin');
-  const { users, reports, mappings, classes, subjects, stats, mutate, busy } = portal;
+  const currentUser = read(K.current, null);
+
   const [activeSection, setActiveSection] = useState('dashboard');
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
-  const [settingsDraft, setSettingsDraft] = useState(null);
-  const settings = settingsDraft || portal.settings;
-  const setSettings = value => setSettingsDraft(typeof value === 'function' ? value(settings) : value);
+  const [theme, setTheme] = useState(
+    localStorage.getItem(K.theme) || 'light'
+  );
+
+  const [users, setUsers] = useState(() => read(K.users));
+  const [reports, setReports] = useState(() => read(K.reports));
+  const [mappings, setMappings] = useState(() => read(K.maps));
+
+  const [settings, setSettings] = useState(() =>
+    read(K.settings, defaultSettings)
+  );
+
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState('');
+
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+
   const [reportSearch, setReportSearch] = useState('');
   const [resultFilter, setResultFilter] = useState('all');
+
   const [userMessage, setUserMessage] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
-  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'student', classId: '', studentId: '', active: true, revision: 0 });
-  const [mappingForm, setMappingForm] = useState({ teacherId: '', classId: '', subjectId: '' });
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('theme', theme); }, [theme]);
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
-  const students = users.filter(u => u.role === 'student' && u.active);
-  const teachers = users.filter(u => u.role === 'teacher' && u.active);
-  const average = stats?.average || 0;
-  const showSection = section => { setActiveSection(section); setSettingsMessage(''); setUserMessage(''); };
+
+  const [userForm, setUserForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'student',
+    className: '',
+    studentId: ''
+  });
+
+  const [mappingForm, setMappingForm] = useState({
+    teacherEmail: '',
+    className: '',
+    subject: ''
+  });
+
+  // Save data to Local Storage
+
+  useEffect(() => {
+    write(K.users, users);
+  }, [users]);
+
+  useEffect(() => {
+    write(K.reports, reports);
+  }, [reports]);
+
+  useEffect(() => {
+    write(K.maps, mappings);
+  }, [mappings]);
+
+  useEffect(() => {
+    write(K.settings, settings);
+  }, [settings]);
+
+  // Theme
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(K.theme, theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
+  // Dashboard calculations
+
+  const students = users.filter(u => u.role === 'student');
+  const teachers = users.filter(u => u.role === 'teacher');
+
+  const average = reports.length
+    ? reports.reduce((sum, r) => sum + Number(r.marks || 0), 0) /
+      reports.length
+    : 0;
+
+  // Navigation
+
+  const showSection = section => {
+    setActiveSection(section);
+    setSettingsMessage('');
+    setUserMessage('');
+  };
+
+  // User management
+
   const openUserModal = user => {
     setEditId(user?.id || '');
-    setUserForm({ name: user?.name || '', email: user?.email || '', password: '', role: user?.role || 'student', classId: user?.classId || '', studentId: user?.studentId || '', active: user?.active ?? true, revision: user?.revision ?? 0 });
-    setUserMessage(''); setShowModal(true);
+
+    setUserForm({
+      name: user?.name || '',
+      email: user?.email || '',
+      password: '',
+      role: user?.role || 'student',
+      className: user?.className || '',
+      studentId: user?.studentId || ''
+    });
+
+    setUserMessage('');
+    setShowModal(true);
   };
-  const closeUserModal = () => { setShowModal(false); setEditId(''); setUserMessage(''); setUserForm(previous => ({ ...previous, password: '' })); };
-  const handleUserSubmit = async event => {
-    event.preventDefault();
-    const body = { name: userForm.name, email: userForm.email, role: userForm.role, classId: userForm.role === 'student' ? userForm.classId || null : null, studentId: userForm.role === 'student' ? userForm.studentId : '' };
-    if (userForm.password) body.password = userForm.password;
-    if (editId) { body.revision = userForm.revision; body.active = userForm.active; }
-    const result = await mutate(editId ? `/users/${editId}` : '/users', editId ? 'PATCH' : 'POST', body);
-    if (result) closeUserModal();
+
+  const closeUserModal = () => {
+    setShowModal(false);
+    setEditId('');
+    setUserMessage('');
   };
-  const deleteUser = async id => {
+
+  const handleUserSubmit = e => {
+    e.preventDefault();
+
+    const email = userForm.email.trim().toLowerCase();
+
+    const duplicate = users.some(
+      u => u.email.toLowerCase() === email && u.id !== editId
+    );
+
+    if (duplicate) {
+      setUserMessage('Email already exists.');
+      return;
+    }
+
+    if (!editId && userForm.password.length < 6) {
+      setUserMessage(
+        'New users need a password of at least 6 characters.'
+      );
+      return;
+    }
+
+    if (editId) {
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === editId
+            ? {
+                ...u,
+                name: userForm.name.trim(),
+                email,
+                role: userForm.role,
+                className: userForm.className.trim(),
+                studentId: userForm.studentId.trim(),
+                ...(userForm.password
+                  ? { password: userForm.password }
+                  : {})
+              }
+            : u
+        )
+      );
+    } else {
+      setUsers(prev => [
+        ...prev,
+        {
+          id: `${userForm.role}-${Date.now()}`,
+          name: userForm.name.trim(),
+          email,
+          password: userForm.password,
+          role: userForm.role,
+          className: userForm.className.trim(),
+          studentId: userForm.studentId.trim()
+        }
+      ]);
+    }
+
+    closeUserModal();
+  };
+
+  const deleteUser = id => {
     const user = users.find(u => u.id === id);
-    if (window.confirm(`Deactivate ${user.name}? Login access will be revoked; academic history is retained.`)) await mutate(`/users/${id}`, 'DELETE');
+
+    if (!user) return;
+
+    if (!window.confirm(`Delete ${user.name}? Their account will be removed.`)) {
+      return;
+    }
+
+    setUsers(prev => prev.filter(u => u.id !== id));
+
+    setMappings(prev =>
+      prev.filter(m => m.teacherEmail !== user.email)
+    );
   };
-  const viewUser = user => window.alert(`Name: ${user.name}\nEmail: ${user.email}\nRole: ${user.role}\nClass: ${user.className || '—'}\nStudent ID: ${user.studentId || '—'}\nStatus: ${user.active ? 'Active' : 'Inactive'}`);
-  const filteredUsers = users.filter(u => u.role !== 'admin').filter(u => (roleFilter === 'all' || u.role === roleFilter) && `${u.name} ${u.email}`.toLowerCase().includes(search.toLowerCase()));
-  const handleMappingSubmit = async event => {
-    event.preventDefault();
-    if (await mutate('/assignments', 'POST', mappingForm)) setMappingForm({ teacherId: '', classId: '', subjectId: '' });
+
+  const viewUser = user => {
+    window.alert(
+      `Name: ${user.name}\n` +
+      `Email: ${user.email}\n` +
+      `Role: ${user.role}\n` +
+      `Class: ${user.className || '—'}\n` +
+      `Student ID: ${user.studentId || '—'}`
+    );
   };
-  const deleteMapping = id => { if (window.confirm('Remove this teaching assignment?')) mutate(`/assignments/${id}`, 'DELETE'); };
-  const deleteReport = id => { if (window.confirm('Permanently delete this academic report?')) mutate(`/reports/${id}`, 'DELETE'); };
-  const filteredReports = reports.filter(r => `${r.studentName} ${r.subject}`.toLowerCase().includes(reportSearch.toLowerCase())).filter(r => resultFilter === 'all' || r.result === resultFilter).slice().reverse();
-  const updateGrade = (index, value) => setSettings(prev => ({ ...prev, grades: prev.grades.map((g, i) => i === index ? { ...g, min: Number(value) } : g) }));
-  const saveSettings = async event => {
-    event.preventDefault();
-    if (await mutate('/grading-settings', 'PUT', settings)) { setSettingsDraft(null); setSettingsMessage('Grading policy saved successfully.'); }
+
+  const filteredUsers = users
+    .filter(u => u.role !== 'admin')
+    .filter(
+      u =>
+        (roleFilter === 'all' || u.role === roleFilter) &&
+        `${u.name} ${u.email}`.toLowerCase().includes(search.toLowerCase())
+    );
+
+  // Teacher mapping
+
+  const handleMappingSubmit = e => {
+    e.preventDefault();
+
+    const teacher = users.find(
+      u => u.email === mappingForm.teacherEmail
+    );
+
+    if (!teacher) return;
+
+    setMappings(prev => [
+      ...prev,
+      {
+        id: Date.now(),
+        teacherEmail: teacher.email,
+        teacherName: teacher.name,
+        className: mappingForm.className.trim(),
+        subject: mappingForm.subject.trim()
+      }
+    ]);
+
+    setMappingForm({
+      teacherEmail: '',
+      className: '',
+      subject: ''
+    });
   };
-  const emptyRow = (columns, message) => <tr><td colSpan={columns} className="empty">{message}</td></tr>;
+
+  const deleteMapping = id => {
+    setMappings(prev => prev.filter(m => m.id !== id));
+  };
+
+  // Reports
+
+  const filteredReports = reports
+    .filter(r =>
+      `${r.studentName} ${r.subject}`
+        .toLowerCase()
+        .includes(reportSearch.toLowerCase())
+    )
+    .filter(
+      r => resultFilter === 'all' || r.result === resultFilter
+    )
+    .slice()
+    .reverse();
+
+  // Grading policy
+
+  const updateGrade = (index, value) => {
+    setSettings(prev => ({
+      ...prev,
+      grades: prev.grades.map((g, i) =>
+        i === index ? { ...g, min: Number(value) } : g
+      )
+    }));
+  };
+
+  const saveSettings = e => {
+    e.preventDefault();
+
+    const grades = [...settings.grades].sort(
+      (a, b) => b.min - a.min
+    );
+
+    if (
+      grades.some(
+        (g, i) => i > 0 && g.min >= grades[i - 1].min
+      )
+    ) {
+      setSettingsMessage(
+        'Each grade threshold must be lower than the one above it.'
+      );
+      return;
+    }
+
+    setSettings(prev => ({ ...prev, grades }));
+
+    setSettingsMessage('Grading policy saved successfully.');
+  };
+
+  // Logout
+
+  const logout = () => {
+    localStorage.removeItem(K.current);
+    window.location.href = '/login';
+  };
+
+  const emptyRow = (columns, message) => (
+    <tr>
+      <td colSpan={columns} className="empty">
+        {message}
+      </td>
+    </tr>
+  );
+
+  // Admin authentication check
+
+  if (!currentUser || currentUser.role !== 'admin') {
+    return (
+      <div className="admin-access-denied">
+        <h2>Admin Access Required</h2>
+        <p>Please log in using an administrator account.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-container">
 
@@ -131,7 +414,6 @@ function Admin() {
         {/* Main content */}
 
         <main className="content">
-          <PortalStatus {...portal} />
 
           {/* Dashboard */}
 
@@ -157,7 +439,7 @@ function Admin() {
 
                 <div className="stat-card purple">
                   <span>Total Users</span>
-                  <strong>{stats?.totalUsers ?? 0}</strong>
+                  <strong>{users.length}</strong>
                   <small>All registered accounts</small>
                 </div>
 
@@ -234,7 +516,7 @@ function Admin() {
                   <div className="panel-head">
                     <div>
                       <h2>System Snapshot</h2>
-                      <p>Shared database records</p>
+                      <p>Live localStorage data</p>
                     </div>
                   </div>
 
@@ -339,7 +621,7 @@ function Admin() {
 
                         <td>
                           <span className={`badge ${u.role}`}>
-                            {u.role}{!u.active ? ' · Inactive' : ''}
+                            {u.role}
                           </span>
                         </td>
 
@@ -365,10 +647,9 @@ function Admin() {
 
                           <button
                             className="small-btn danger"
-                            disabled={busy || !u.active}
                             onClick={() => deleteUser(u.id)}
                           >
-                            Deactivate
+                            Delete
                           </button>
 
                         </td>
@@ -403,10 +684,6 @@ function Admin() {
                 </div>
               </div>
 
-              <div className="panel-grid">
-                <CatalogManager title="Classes" path="/classes" items={classes} mutate={mutate} busy={busy} />
-                <CatalogManager title="Subjects" path="/subjects" items={subjects} mutate={mutate} busy={busy} />
-              </div>
               <div className="panel form-panel">
 
                 <form
@@ -419,12 +696,11 @@ function Admin() {
 
                     <select
                       required
-                      aria-label="Teacher"
-                      value={mappingForm.teacherId}
+                      value={mappingForm.teacherEmail}
                       onChange={e =>
                         setMappingForm({
                           ...mappingForm,
-                          teacherId: e.target.value
+                          teacherEmail: e.target.value
                         })
                       }
                     >
@@ -432,7 +708,7 @@ function Admin() {
                       <option value="">Select teacher</option>
 
                       {teachers.map(t => (
-                        <option key={t.id} value={t.id}>
+                        <option key={t.id} value={t.email}>
                           {t.name}
                         </option>
                       ))}
@@ -444,24 +720,38 @@ function Admin() {
                   <label>
                     Class / Section
 
-                    <select aria-label="Class / Section" required value={mappingForm.classId} onChange={e => setMappingForm({ ...mappingForm, classId: e.target.value })}>
-                      <option value="">Select class</option>
-                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <input
+                      required
+                      placeholder="e.g. B.Tech CSE-A"
+                      value={mappingForm.className}
+                      onChange={e =>
+                        setMappingForm({
+                          ...mappingForm,
+                          className: e.target.value
+                        })
+                      }
+                    />
 
                   </label>
 
                   <label>
                     Subject
 
-                    <select aria-label="Subject" required value={mappingForm.subjectId} onChange={e => setMappingForm({ ...mappingForm, subjectId: e.target.value })}>
-                      <option value="">Select subject</option>
-                      {subjects.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <input
+                      required
+                      placeholder="e.g. Data Structures"
+                      value={mappingForm.subject}
+                      onChange={e =>
+                        setMappingForm({
+                          ...mappingForm,
+                          subject: e.target.value
+                        })
+                      }
+                    />
 
                   </label>
 
-                  <button className="primary-btn" type="submit" disabled={busy || portal.loading}>
+                  <button className="primary-btn" type="submit">
                     Save Assignment
                   </button>
 
@@ -559,7 +849,6 @@ function Admin() {
                       <th>Grade</th>
                       <th>Result</th>
                       <th>Teacher</th>
-                      <th>Actions</th>
                     </tr>
                   </thead>
 
@@ -590,14 +879,13 @@ function Admin() {
                           {users.find(u => u.email === r.teacherEmail)?.name ||
                             r.teacherEmail || '—'}
                         </td>
-                        <td><button className="small-btn danger" disabled={busy} onClick={() => deleteReport(r.id)}>Delete</button></td>
 
                       </tr>
 
                     ))}
 
                     {filteredReports.length === 0 &&
-                      emptyRow(8, 'No reports found.')}
+                      emptyRow(7, 'No reports found.')}
 
                   </tbody>
                 </table>
@@ -675,7 +963,7 @@ function Admin() {
 
                   </div>
 
-                  <button className="primary-btn" type="submit" disabled={busy || portal.loading}>
+                  <button className="primary-btn" type="submit">
                     Save Grading Policy
                   </button>
 
@@ -757,7 +1045,7 @@ function Admin() {
                   <input
                     type="password"
                     required={!editId}
-                    minLength="8"
+                    minLength="6"
                     placeholder={
                       editId
                         ? 'Leave blank to keep current password'
@@ -778,7 +1066,6 @@ function Admin() {
                   Role
 
                   <select
-                    aria-label="Role"
                     value={userForm.role}
                     onChange={e =>
                       setUserForm({
@@ -796,10 +1083,15 @@ function Admin() {
                 <label>
                   Class / Section
 
-                  <select aria-label="Class / Section" disabled={userForm.role !== 'student'} value={userForm.classId} onChange={e => setUserForm({ ...userForm, classId: e.target.value })}>
-                    <option value="">Unassigned</option>
-                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  <input
+                    value={userForm.className}
+                    onChange={e =>
+                      setUserForm({
+                        ...userForm,
+                        className: e.target.value
+                      })
+                    }
+                  />
 
                 </label>
 
@@ -807,7 +1099,6 @@ function Admin() {
                   Student ID
 
                   <input
-                    disabled={userForm.role !== 'student'}
                     value={userForm.studentId}
                     onChange={e =>
                       setUserForm({
@@ -821,12 +1112,11 @@ function Admin() {
 
               </div>
 
-              {editId && <label><input type="checkbox" checked={userForm.active} onChange={e => setUserForm({ ...userForm, active: e.target.checked })} /> Account active</label>}
-              <button className="primary-btn" type="submit" disabled={busy}>
+              <button className="primary-btn" type="submit">
                 Save User
               </button>
 
-              <p className="message" role="alert">{userMessage || portal.error}</p>
+              <p className="message">{userMessage}</p>
 
             </form>
 

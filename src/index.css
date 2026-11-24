@@ -19,8 +19,3 @@ body {
   min-height: 100vh;
   margin: 0;
 }
-
-/* Allow the existing table wrappers to scroll inside narrow grid columns. */
-.content {
-  min-width: 0;
-}
