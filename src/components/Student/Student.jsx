@@ -1,21 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../../api/client';
+import { useAuth } from '../../context/useAuth';
 import './Student.css';
 
-const K = {
-  users: 'users',
-  reports: 'reports',
-  settings: 'gradingSettings',
-  current: 'currentUser',
-  theme: 'theme'
-};
-
-const read = (key, fallback = []) => {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
+const THEME_KEY = 'theme';
 
 const defaultSettings = {
   passMark: 40,
@@ -29,74 +17,90 @@ const defaultSettings = {
   ]
 };
 
-function Student() {
+const defaultStats = {
+  subjects: 0,
+  averageMarks: 0,
+  averageAttendance: 0,
+  passRate: 0,
+  overallGrade: '—',
+  gpa: '—'
+};
 
-  const currentUser = read(K.current, null);
+function Student() {
+  const { user: currentUser, logout: authLogout } = useAuth();
 
   const [activeSection, setActiveSection] = useState('dashboard');
 
   const [theme, setTheme] = useState(
-    localStorage.getItem(K.theme) || 'light'
+    localStorage.getItem(THEME_KEY) || 'light'
   );
 
-  const [reports, setReports] = useState(() =>
-    read(K.reports).filter(
-      r => r.studentEmail === currentUser?.email
-    )
-  );
-
-  const [settings] = useState(() =>
-    read(K.settings, defaultSettings)
-  );
+  const [profile, setProfile] = useState(currentUser);
+  const [stats, setStats] = useState(defaultStats);
+  const [reports, setReports] = useState([]);
+  const [settings, setSettings] = useState(defaultSettings);
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
 
   // Theme management
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem(K.theme, theme);
+    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  // Grade calculation
+  // Load overview from backend
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const data = await api.getStudentOverview();
+        const overview = data?.overview;
+        if (active && overview) {
+          setPageError('');
+          setProfile(overview.profile || currentUser);
+          setStats(overview.stats || defaultStats);
+          setReports(overview.reports || []);
+          setSettings(overview.gradingPolicy || defaultSettings);
+        }
+      } catch (err) {
+        if (active) {
+          setPageError(err?.message || 'Failed to load student data.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [currentUser, activeSection]);
+
+  // Grade calculation fallback
 
   const calculateGrade = marks => {
-    return [...settings.grades]
+    return [...(settings.grades || defaultSettings.grades)]
       .sort((a, b) => b.min - a.min)
       .find(g => Number(marks) >= g.min)?.label || 'F';
   };
 
-  // Dashboard calculations
+  const studentProfile = profile || currentUser;
 
-  const averageMarks = reports.length
-    ? reports.reduce((sum, r) =>
-        sum + Number(r.marks || 0), 0
-      ) / reports.length
-    : 0;
-
-  const averageAttendance = reports.length
-    ? reports.reduce((sum, r) =>
-        sum + Number(r.attendance || 0), 0
-      ) / reports.length
-    : 0;
-
-  const passedReports = reports.filter(
-    r => r.result === 'Pass'
-  ).length;
-
-  const passRate = reports.length
-    ? (passedReports / reports.length) * 100
-    : 0;
-
-  const overallGrade = reports.length
-    ? calculateGrade(averageMarks)
-    : '—';
-
-  const gpa = reports.length
-    ? (averageMarks / 10).toFixed(2)
-    : '—';
+  const averageMarks = Number(stats.averageMarks || 0);
+  const averageAttendance = Number(stats.averageAttendance || 0);
+  const passRate = Number(stats.passRate || 0);
+  const overallGrade = stats.overallGrade || '—';
+  const gpa = stats.gpa || '—';
+  const subjectCount = stats.subjects ?? reports.length;
 
   // Navigation
 
@@ -116,9 +120,8 @@ function Student() {
 
   // Logout
 
-  const logout = () => {
-    localStorage.removeItem(K.current);
-    window.location.href = '/login';
+  const logout = async () => {
+    await authLogout();
   };
 
   // Authentication check
@@ -163,7 +166,7 @@ function Student() {
           </button>
 
           <span className="user-chip">
-            {currentUser.name}
+            {studentProfile.name}
           </span>
 
           <button
@@ -211,6 +214,11 @@ function Student() {
         {/* Main Content */}
 
         <main className="content">
+          {pageError && (
+            <p className="message" style={{ color: '#ef4444', marginBottom: '16px' }}>
+              {pageError}
+            </p>
+          )}
 
           {/* DASHBOARD */}
 
@@ -227,13 +235,13 @@ function Student() {
                   </span>
 
                   <h1>
-                    Welcome, {currentUser.name} ✨
+                    Welcome, {studentProfile.name} ✨
                   </h1>
 
                   <p>
-                    {currentUser.className || 'Class not assigned'}
+                    {studentProfile.className || 'Class not assigned'}
                     {' · '}
-                    {currentUser.studentId || 'Student account'}
+                    {studentProfile.studentId || 'Student account'}
                   </p>
 
                 </div>
@@ -256,7 +264,7 @@ function Student() {
 
                 <div className="stat-card purple">
                   <span>Subjects</span>
-                  <strong>{reports.length}</strong>
+                  <strong>{subjectCount}</strong>
                   <small>Reported subjects</small>
                 </div>
 
@@ -341,7 +349,9 @@ function Student() {
                   ) : (
 
                     <div className="empty">
-                      Your reports will appear here after a teacher submits them.
+                      {loading
+                        ? 'Loading academic reports...'
+                        : 'Your reports will appear here after a teacher submits them.'}
                     </div>
 
                   )}
@@ -358,7 +368,7 @@ function Student() {
 
           {activeSection === 'reports' && (
 
-            <section className="page-section">
+            <section className="page-section" id="reports">
 
               <div className="page-head">
 
@@ -391,12 +401,12 @@ function Student() {
 
                 <div>
                   <span>Student</span>
-                  <strong>{currentUser.name}</strong>
+                  <strong>{studentProfile.name}</strong>
                 </div>
 
                 <div>
                   <span>Class</span>
-                  <strong>{currentUser.className || '—'}</strong>
+                  <strong>{studentProfile.className || '—'}</strong>
                 </div>
 
                 <div>
@@ -523,8 +533,9 @@ function Student() {
 
                 <div className="avatar">
 
-                  {currentUser.name
+                  {(studentProfile.name || 'S')
                     .split(' ')
+                    .filter(Boolean)
                     .map(word => word[0])
                     .slice(0, 2)
                     .join('')
@@ -534,9 +545,9 @@ function Student() {
 
                 <div className="profile-info">
 
-                  <h2>{currentUser.name}</h2>
+                  <h2>{studentProfile.name}</h2>
 
-                  <p>{currentUser.email}</p>
+                  <p>{studentProfile.email}</p>
 
                   <div className="profile-grid">
 
@@ -548,14 +559,14 @@ function Student() {
                     <div>
                       <span>Student ID</span>
                       <strong>
-                        {currentUser.studentId || '—'}
+                        {studentProfile.studentId || '—'}
                       </strong>
                     </div>
 
                     <div>
                       <span>Class / Section</span>
                       <strong>
-                        {currentUser.className || '—'}
+                        {studentProfile.className || '—'}
                       </strong>
                     </div>
 

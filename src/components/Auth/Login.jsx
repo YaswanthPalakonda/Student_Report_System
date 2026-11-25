@@ -1,45 +1,36 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/useAuth';
 import './Auth.css';
 
 const KEYS = {
-    users: 'users',
-    reports: 'reports',
-    settings: 'gradingSettings',
-    current: 'currentUser',
     remember: 'rememberedUser',
     theme: 'theme'
 };
 
-const defaults = {
-    grades: [
-        { label: 'A+', min: 90 },
-        { label: 'A', min: 80 },
-        { label: 'B', min: 70 },
-        { label: 'C', min: 60 },
-        { label: 'D', min: 50 },
-        { label: 'F', min: 0 }
-    ],
-    passMark: 40
+const ROLE_ROUTES = {
+    admin: '/admin',
+    teacher: '/teacher',
+    student: '/student'
 };
 
-function read(key, fallback = []) {
+function readRememberedEmail() {
     try {
-        return JSON.parse(localStorage.getItem(key)) ?? fallback;
+        const stored = JSON.parse(localStorage.getItem(KEYS.remember) || 'null');
+        return typeof stored?.email === 'string' ? stored.email : '';
     } catch {
-        return fallback;
+        return '';
     }
 }
 
-function write(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-}
-
 function Login() {
+    const navigate = useNavigate();
+    const { user, loading, login } = useAuth();
 
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(() => readRememberedEmail());
     const [password, setPassword] = useState('');
 
-    const [rememberMe, setRememberMe] = useState(false);
+    const [rememberMe, setRememberMe] = useState(() => Boolean(readRememberedEmail()));
 
     const [showPassword, setShowPassword] = useState(false);
 
@@ -48,138 +39,80 @@ function Login() {
     );
 
     const [message, setMessage] = useState('');
-
-    // Initialize application data
-
-    useEffect(() => {
-
-        let users = read(KEYS.users);
-
-        if (!users.some(u => u.email === 'admin@school.com')) {
-
-            users.unshift({
-                id: 'admin-1',
-                name: 'System Administrator',
-                email: 'admin@school.com',
-                password: 'admin123',
-                role: 'admin'
-            });
-
-        }
-
-        write(KEYS.users, users);
-
-        if (!localStorage.getItem(KEYS.reports)) {
-            write(KEYS.reports, []);
-        }
-
-        if (!localStorage.getItem(KEYS.settings)) {
-            write(KEYS.settings, defaults);
-        }
-
-        const remembered = read(KEYS.remember, null);
-
-        if (remembered?.email) {
-            setEmail(remembered.email);
-            setRememberMe(true);
-        }
-
-    }, []);
+    const [submitting, setSubmitting] = useState(false);
 
     // Theme management
 
     useEffect(() => {
-
         document.documentElement.dataset.theme = theme;
-
         localStorage.setItem(KEYS.theme, theme);
-
     }, [theme]);
 
     const toggleTheme = () => {
-
         setTheme(prev =>
             prev === 'dark' ? 'light' : 'dark'
         );
-
     };
 
     // Password visibility
 
     const togglePassword = () => {
-
         setShowPassword(prev => !prev);
-
     };
 
     // Login functionality
 
-    const handleLogin = e => {
-
+    const handleLogin = async e => {
         e.preventDefault();
+        setMessage('');
 
         const normalizedEmail = email.trim().toLowerCase();
 
-        const users = read(KEYS.users);
-
-        const user = users.find(
-            u =>
-                u.email.toLowerCase() === normalizedEmail &&
-                u.password === password
-        );
-
-        if (!user) {
-
-            setMessage(
-                'Invalid email or password. Please use the credentials provided by Admin.'
-            );
-
+        if (!normalizedEmail || !password) {
+            setMessage('Please enter both email and password.');
             return;
-
         }
 
-        // Save current user
+        setSubmitting(true);
 
-        write(KEYS.current, user);
-
-        // Remember email
-
-        if (rememberMe) {
-
-            write(KEYS.remember, {
-                email: normalizedEmail
+        try {
+            const authenticatedUser = await login({
+                email: normalizedEmail,
+                password,
+                rememberMe
             });
 
-        } else {
+            if (rememberMe) {
+                localStorage.setItem(
+                    KEYS.remember,
+                    JSON.stringify({ email: normalizedEmail })
+                );
+            } else {
+                localStorage.removeItem(KEYS.remember);
+            }
 
-            localStorage.removeItem(KEYS.remember);
+            const targetRoute = ROLE_ROUTES[authenticatedUser?.role];
 
+            if (targetRoute) {
+                navigate(targetRoute, { replace: true });
+            } else {
+                setMessage('Invalid user role.');
+            }
+        } catch (error) {
+            setMessage(
+                error?.message ||
+                    'Invalid email or password. Please use the credentials provided by Admin.'
+            );
+        } finally {
+            setSubmitting(false);
         }
-
-        // Role-based navigation
-
-        if (user.role === 'admin') {
-
-            window.location.href = '/admin';
-
-        } else if (user.role === 'teacher') {
-
-            window.location.href = '/teacher';
-
-        } else if (user.role === 'student') {
-
-            window.location.href = '/student';
-
-        } else {
-
-            setMessage('Invalid user role.');
-
-        }
-
     };
 
-    return (
+    if (!loading && user && ROLE_ROUTES[user.role]) {
+        return <Navigate to={ROLE_ROUTES[user.role]} replace />;
+    }
 
+    return (
         <div className="auth-shell">
 
             {/* Left Hero Section */}
@@ -213,7 +146,7 @@ function Login() {
                     <div className="hero-pills">
 
                         <span>
-                            ⚡ Real-time local data
+                            ⚡ Real-time cloud data
                         </span>
 
                         <span>
@@ -344,12 +277,13 @@ function Login() {
                         <button
                             className="primary-btn"
                             type="submit"
+                            disabled={submitting}
                         >
-                            Sign in
+                            {submitting ? 'Signing in...' : 'Sign in'}
                             <span>→</span>
                         </button>
 
-                        <p className="message">
+                        <p className={`message ${message ? 'error' : ''}`}>
                             {message}
                         </p>
 
@@ -357,13 +291,10 @@ function Login() {
 
                 </section>
 
-
             </main>
 
         </div>
-
     );
-
 }
 
 export default Login;

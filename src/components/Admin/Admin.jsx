@@ -1,26 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { api } from '../../api/client';
+import { useAuth } from '../../context/useAuth';
 import './Admin.css';
 
-const K = {
-  users: 'users',
-  reports: 'reports',
-  settings: 'gradingSettings',
-  maps: 'teacherAssignments',
-  current: 'currentUser',
-  theme: 'theme'
-};
-
-const read = (key, fallback = []) => {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const write = (key, value) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
+const THEME_KEY = 'theme';
 
 const defaultSettings = {
   grades: [
@@ -34,24 +17,37 @@ const defaultSettings = {
   passMark: 40
 };
 
+const defaultOverview = {
+  totalUsers: 0,
+  students: 0,
+  teachers: 0,
+  reports: 0,
+  assignments: 0,
+  classAverage: 0,
+  recentReports: []
+};
+
 function Admin() {
-  const currentUser = read(K.current, null);
+  const { user: currentUser, logout: authLogout } = useAuth();
 
   const [activeSection, setActiveSection] = useState('dashboard');
   const [theme, setTheme] = useState(
-    localStorage.getItem(K.theme) || 'light'
+    localStorage.getItem(THEME_KEY) || 'light'
   );
 
-  const [users, setUsers] = useState(() => read(K.users));
-  const [reports, setReports] = useState(() => read(K.reports));
-  const [mappings, setMappings] = useState(() => read(K.maps));
+  const [overview, setOverview] = useState(defaultOverview);
+  const [users, setUsers] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [mappings, setMappings] = useState([]);
+  const [settings, setSettings] = useState(defaultSettings);
 
-  const [settings, setSettings] = useState(() =>
-    read(K.settings, defaultSettings)
-  );
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
 
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -60,7 +56,11 @@ function Admin() {
   const [resultFilter, setResultFilter] = useState('all');
 
   const [userMessage, setUserMessage] = useState('');
+  const [mappingMessage, setMappingMessage] = useState('');
   const [settingsMessage, setSettingsMessage] = useState('');
+
+  const [savingMapping, setSavingMapping] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const [userForm, setUserForm] = useState({
     name: '',
@@ -72,49 +72,108 @@ function Admin() {
   });
 
   const [mappingForm, setMappingForm] = useState({
-    teacherEmail: '',
+    teacherId: '',
     className: '',
     subject: ''
   });
-
-  // Save data to Local Storage
-
-  useEffect(() => {
-    write(K.users, users);
-  }, [users]);
-
-  useEffect(() => {
-    write(K.reports, reports);
-  }, [reports]);
-
-  useEffect(() => {
-    write(K.maps, mappings);
-  }, [mappings]);
-
-  useEffect(() => {
-    write(K.settings, settings);
-  }, [settings]);
 
   // Theme
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem(K.theme, theme);
+    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   const toggleTheme = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
-  // Dashboard calculations
+  // Data loaders
 
-  const students = users.filter(u => u.role === 'student');
-  const teachers = users.filter(u => u.role === 'teacher');
+  const loadOverview = useCallback(async () => {
+    const data = await api.getAdminOverview();
+    if (data?.overview) {
+      setOverview(data.overview);
+    }
+  }, []);
 
-  const average = reports.length
-    ? reports.reduce((sum, r) => sum + Number(r.marks || 0), 0) /
-      reports.length
-    : 0;
+  const loadUsers = useCallback(async () => {
+    const query = {};
+    if (roleFilter !== 'all') query.role = roleFilter;
+    if (search.trim()) query.search = search.trim();
+
+    const data = await api.listUsers(query);
+    setUsers(data?.users || []);
+  }, [roleFilter, search]);
+
+  const loadTeachers = useCallback(async () => {
+    const data = await api.listUsers({ role: 'teacher' });
+    setTeachers(data?.users || []);
+  }, []);
+
+  const loadMappings = useCallback(async () => {
+    const data = await api.listAssignments();
+    setMappings(data?.assignments || []);
+  }, []);
+
+  const loadReports = useCallback(async () => {
+    const query = {};
+    if (reportSearch.trim()) query.search = reportSearch.trim();
+    if (resultFilter !== 'all') query.result = resultFilter;
+
+    const data = await api.listReports(query);
+    setReports(data?.reports || []);
+  }, [reportSearch, resultFilter]);
+
+  const loadSettings = useCallback(async () => {
+    const data = await api.getSettings();
+    if (data?.gradingPolicy) {
+      setSettings(data.gradingPolicy);
+    }
+  }, []);
+
+  // Initial load and section refresh
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      setPageError('');
+      try {
+        if (activeSection === 'dashboard') {
+          await loadOverview();
+        } else if (activeSection === 'users') {
+          await Promise.all([loadUsers(), loadTeachers()]);
+        } else if (activeSection === 'mapping') {
+          await Promise.all([loadMappings(), loadTeachers()]);
+        } else if (activeSection === 'reports') {
+          await loadReports();
+        } else if (activeSection === 'settings') {
+          await loadSettings();
+        }
+      } catch (err) {
+        if (active) {
+          setPageError(err?.message || 'Failed to load admin data.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeSection,
+    loadOverview,
+    loadUsers,
+    loadTeachers,
+    loadMappings,
+    loadReports,
+    loadSettings
+  ]);
 
   // Navigation
 
@@ -122,6 +181,8 @@ function Admin() {
     setActiveSection(section);
     setSettingsMessage('');
     setUserMessage('');
+    setMappingMessage('');
+    setPageError('');
   };
 
   // User management
@@ -148,19 +209,11 @@ function Admin() {
     setUserMessage('');
   };
 
-  const handleUserSubmit = e => {
+  const handleUserSubmit = async e => {
     e.preventDefault();
+    setUserMessage('');
 
     const email = userForm.email.trim().toLowerCase();
-
-    const duplicate = users.some(
-      u => u.email.toLowerCase() === email && u.id !== editId
-    );
-
-    if (duplicate) {
-      setUserMessage('Email already exists.');
-      return;
-    }
 
     if (!editId && userForm.password.length < 6) {
       setUserMessage(
@@ -169,43 +222,44 @@ function Admin() {
       return;
     }
 
-    if (editId) {
-      setUsers(prev =>
-        prev.map(u =>
-          u.id === editId
-            ? {
-                ...u,
-                name: userForm.name.trim(),
-                email,
-                role: userForm.role,
-                className: userForm.className.trim(),
-                studentId: userForm.studentId.trim(),
-                ...(userForm.password
-                  ? { password: userForm.password }
-                  : {})
-              }
-            : u
-        )
+    if (editId && userForm.password && userForm.password.length < 6) {
+      setUserMessage(
+        'Password must be at least 6 characters.'
       );
-    } else {
-      setUsers(prev => [
-        ...prev,
-        {
-          id: `${userForm.role}-${Date.now()}`,
-          name: userForm.name.trim(),
-          email,
-          password: userForm.password,
-          role: userForm.role,
-          className: userForm.className.trim(),
-          studentId: userForm.studentId.trim()
-        }
-      ]);
+      return;
     }
 
-    closeUserModal();
+    const payload = {
+      name: userForm.name.trim(),
+      email,
+      role: userForm.role,
+      className: userForm.className.trim(),
+      studentId: userForm.studentId.trim()
+    };
+
+    if (userForm.password) {
+      payload.password = userForm.password;
+    }
+
+    setSavingUser(true);
+
+    try {
+      if (editId) {
+        await api.updateUser(editId, payload);
+      } else {
+        await api.createUser(payload);
+      }
+
+      await Promise.all([loadUsers(), loadTeachers(), loadOverview()]);
+      closeUserModal();
+    } catch (err) {
+      setUserMessage(err?.message || 'Unable to save user.');
+    } finally {
+      setSavingUser(false);
+    }
   };
 
-  const deleteUser = id => {
+  const deleteUser = async id => {
     const user = users.find(u => u.id === id);
 
     if (!user) return;
@@ -214,77 +268,78 @@ function Admin() {
       return;
     }
 
-    setUsers(prev => prev.filter(u => u.id !== id));
-
-    setMappings(prev =>
-      prev.filter(m => m.teacherEmail !== user.email)
-    );
+    try {
+      await api.deleteUser(id);
+      await Promise.all([loadUsers(), loadTeachers(), loadMappings(), loadOverview()]);
+    } catch (err) {
+      setPageError(err?.message || 'Unable to delete user.');
+    }
   };
 
-  const viewUser = user => {
+  const viewUser = async user => {
+    let details = user;
+    try {
+      const data = await api.getUser(user.id);
+      if (data?.user) {
+        details = data.user;
+      }
+    } catch {
+      // Fallback to already-loaded user details.
+    }
+
     window.alert(
-      `Name: ${user.name}\n` +
-      `Email: ${user.email}\n` +
-      `Role: ${user.role}\n` +
-      `Class: ${user.className || '—'}\n` +
-      `Student ID: ${user.studentId || '—'}`
+      `Name: ${details.name}\n` +
+      `Email: ${details.email}\n` +
+      `Role: ${details.role}\n` +
+      `Class: ${details.className || '—'}\n` +
+      `Student ID: ${details.studentId || '—'}`
     );
   };
-
-  const filteredUsers = users
-    .filter(u => u.role !== 'admin')
-    .filter(
-      u =>
-        (roleFilter === 'all' || u.role === roleFilter) &&
-        `${u.name} ${u.email}`.toLowerCase().includes(search.toLowerCase())
-    );
 
   // Teacher mapping
 
-  const handleMappingSubmit = e => {
+  const handleMappingSubmit = async e => {
     e.preventDefault();
+    setMappingMessage('');
 
-    const teacher = users.find(
-      u => u.email === mappingForm.teacherEmail
-    );
+    if (!mappingForm.teacherId) {
+      setMappingMessage('Please select a teacher.');
+      return;
+    }
 
-    if (!teacher) return;
+    setSavingMapping(true);
 
-    setMappings(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        teacherEmail: teacher.email,
-        teacherName: teacher.name,
+    try {
+      await api.createAssignment({
+        teacherId: mappingForm.teacherId,
         className: mappingForm.className.trim(),
         subject: mappingForm.subject.trim()
-      }
-    ]);
+      });
 
-    setMappingForm({
-      teacherEmail: '',
-      className: '',
-      subject: ''
-    });
+      setMappingForm({
+        teacherId: '',
+        className: '',
+        subject: ''
+      });
+
+      setMappingMessage('Assignment saved successfully.');
+      await Promise.all([loadMappings(), loadOverview()]);
+    } catch (err) {
+      setMappingMessage(err?.message || 'Unable to save assignment.');
+    } finally {
+      setSavingMapping(false);
+    }
   };
 
-  const deleteMapping = id => {
-    setMappings(prev => prev.filter(m => m.id !== id));
+  const deleteMapping = async id => {
+    setMappingMessage('');
+    try {
+      await api.deleteAssignment(id);
+      await Promise.all([loadMappings(), loadOverview()]);
+    } catch (err) {
+      setMappingMessage(err?.message || 'Unable to remove assignment.');
+    }
   };
-
-  // Reports
-
-  const filteredReports = reports
-    .filter(r =>
-      `${r.studentName} ${r.subject}`
-        .toLowerCase()
-        .includes(reportSearch.toLowerCase())
-    )
-    .filter(
-      r => resultFilter === 'all' || r.result === resultFilter
-    )
-    .slice()
-    .reverse();
 
   // Grading policy
 
@@ -297,8 +352,9 @@ function Admin() {
     }));
   };
 
-  const saveSettings = e => {
+  const saveSettings = async e => {
     e.preventDefault();
+    setSettingsMessage('');
 
     const grades = [...settings.grades].sort(
       (a, b) => b.min - a.min
@@ -315,16 +371,32 @@ function Admin() {
       return;
     }
 
-    setSettings(prev => ({ ...prev, grades }));
+    setSavingSettings(true);
 
-    setSettingsMessage('Grading policy saved successfully.');
+    try {
+      const data = await api.updateSettings({
+        passMark: Number(settings.passMark),
+        grades
+      });
+
+      if (data?.gradingPolicy) {
+        setSettings(data.gradingPolicy);
+      } else {
+        setSettings(prev => ({ ...prev, grades }));
+      }
+
+      setSettingsMessage('Grading policy saved successfully.');
+    } catch (err) {
+      setSettingsMessage(err?.message || 'Unable to save grading policy.');
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   // Logout
 
-  const logout = () => {
-    localStorage.removeItem(K.current);
-    window.location.href = '/login';
+  const logout = async () => {
+    await authLogout();
   };
 
   const emptyRow = (columns, message) => (
@@ -414,6 +486,11 @@ function Admin() {
         {/* Main content */}
 
         <main className="content">
+          {pageError && (
+            <p className="message" style={{ color: '#ef4444', marginBottom: '16px' }}>
+              {pageError}
+            </p>
+          )}
 
           {/* Dashboard */}
 
@@ -439,25 +516,25 @@ function Admin() {
 
                 <div className="stat-card purple">
                   <span>Total Users</span>
-                  <strong>{users.length}</strong>
+                  <strong>{overview.totalUsers}</strong>
                   <small>All registered accounts</small>
                 </div>
 
                 <div className="stat-card cyan">
                   <span>Students</span>
-                  <strong>{students.length}</strong>
+                  <strong>{overview.students}</strong>
                   <small>Active student profiles</small>
                 </div>
 
                 <div className="stat-card orange">
                   <span>Teachers</span>
-                  <strong>{teachers.length}</strong>
+                  <strong>{overview.teachers}</strong>
                   <small>Teaching accounts</small>
                 </div>
 
                 <div className="stat-card green">
                   <span>Class Average</span>
-                  <strong>{average.toFixed(1)}%</strong>
+                  <strong>{Number(overview.classAverage || 0).toFixed(1)}%</strong>
                   <small>Across all reports</small>
                 </div>
 
@@ -488,7 +565,7 @@ function Admin() {
 
                       <tbody>
 
-                        {reports.slice(-5).reverse().map((r, i) => (
+                        {(overview.recentReports || []).map((r, i) => (
                           <tr key={r.id || i}>
                             <td>{r.studentName}</td>
                             <td>{r.subject}</td>
@@ -501,8 +578,8 @@ function Admin() {
                           </tr>
                         ))}
 
-                        {reports.length === 0 &&
-                          emptyRow(4, 'No reports submitted yet.')}
+                        {(overview.recentReports || []).length === 0 &&
+                          emptyRow(4, loading ? 'Loading reports...' : 'No reports submitted yet.')}
 
                       </tbody>
                     </table>
@@ -516,7 +593,7 @@ function Admin() {
                   <div className="panel-head">
                     <div>
                       <h2>System Snapshot</h2>
-                      <p>Live localStorage data</p>
+                      <p>Live database data</p>
                     </div>
                   </div>
 
@@ -524,22 +601,22 @@ function Admin() {
 
                     <div>
                       <span>Students</span>
-                      <strong>{students.length}</strong>
+                      <strong>{overview.students}</strong>
                     </div>
 
                     <div>
                       <span>Teachers</span>
-                      <strong>{teachers.length}</strong>
+                      <strong>{overview.teachers}</strong>
                     </div>
 
                     <div>
                       <span>Reports</span>
-                      <strong>{reports.length}</strong>
+                      <strong>{overview.reports}</strong>
                     </div>
 
                     <div>
                       <span>Assignments</span>
-                      <strong>{mappings.length}</strong>
+                      <strong>{overview.assignments}</strong>
                     </div>
 
                   </div>
@@ -612,7 +689,7 @@ function Admin() {
 
                   <tbody>
 
-                    {filteredUsers.map(u => (
+                    {users.map(u => (
 
                       <tr key={u.id}>
 
@@ -658,7 +735,7 @@ function Admin() {
 
                     ))}
 
-                    {filteredUsers.length === 0 &&
+                    {users.length === 0 &&
                       emptyRow(5, 'No matching users.')}
 
                   </tbody>
@@ -696,11 +773,11 @@ function Admin() {
 
                     <select
                       required
-                      value={mappingForm.teacherEmail}
+                      value={mappingForm.teacherId}
                       onChange={e =>
                         setMappingForm({
                           ...mappingForm,
-                          teacherEmail: e.target.value
+                          teacherId: e.target.value
                         })
                       }
                     >
@@ -708,7 +785,7 @@ function Admin() {
                       <option value="">Select teacher</option>
 
                       {teachers.map(t => (
-                        <option key={t.id} value={t.email}>
+                        <option key={t.id} value={t.id}>
                           {t.name}
                         </option>
                       ))}
@@ -751,11 +828,15 @@ function Admin() {
 
                   </label>
 
-                  <button className="primary-btn" type="submit">
-                    Save Assignment
+                  <button className="primary-btn" type="submit" disabled={savingMapping}>
+                    {savingMapping ? 'Saving...' : 'Save Assignment'}
                   </button>
 
                 </form>
+
+                {mappingMessage && (
+                  <p className="message">{mappingMessage}</p>
+                )}
 
               </div>
 
@@ -854,7 +935,7 @@ function Admin() {
 
                   <tbody>
 
-                    {filteredReports.map((r, i) => (
+                    {reports.map((r, i) => (
 
                       <tr key={r.id || i}>
 
@@ -876,15 +957,14 @@ function Admin() {
                         </td>
 
                         <td>
-                          {users.find(u => u.email === r.teacherEmail)?.name ||
-                            r.teacherEmail || '—'}
+                          {r.teacherName || r.teacherEmail || '—'}
                         </td>
 
                       </tr>
 
                     ))}
 
-                    {filteredReports.length === 0 &&
+                    {reports.length === 0 &&
                       emptyRow(7, 'No reports found.')}
 
                   </tbody>
@@ -963,8 +1043,8 @@ function Admin() {
 
                   </div>
 
-                  <button className="primary-btn" type="submit">
-                    Save Grading Policy
+                  <button className="primary-btn" type="submit" disabled={savingSettings}>
+                    {savingSettings ? 'Saving...' : 'Save Grading Policy'}
                   </button>
 
                   <p className="message">
@@ -1112,8 +1192,8 @@ function Admin() {
 
               </div>
 
-              <button className="primary-btn" type="submit">
-                Save User
+              <button className="primary-btn" type="submit" disabled={savingUser}>
+                {savingUser ? 'Saving...' : 'Save User'}
               </button>
 
               <p className="message">{userMessage}</p>
